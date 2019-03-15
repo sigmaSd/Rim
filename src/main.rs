@@ -10,6 +10,9 @@ use tuikit::attr::*;
 use tuikit::event::{Event, Key};
 use tuikit::term::{Term, TermHeight};
 
+mod stats;
+use stats::Stats;
+
 type RR<T> = Rc<RefCell<T>>;
 
 fn main() {
@@ -45,6 +48,7 @@ struct Terminal {
     width: usize,
     height: usize,
     cursor: Cursor,
+    stats: Stats,
 }
 impl Terminal {
     fn new(buffer: String) -> Self {
@@ -54,6 +58,8 @@ impl Terminal {
 
         let (width, height) = term.borrow().term_size().unwrap();
         let cursor = Cursor::new(width);
+        let mut stats = Stats::default();
+        stats.read(&buffer);
 
         Self {
             term,
@@ -61,6 +67,7 @@ impl Terminal {
             width,
             height,
             cursor,
+            stats,
         }
     }
     fn run(&mut self) {
@@ -92,21 +99,22 @@ impl Terminal {
 
         self.present();
     }
+    fn get_current_row_len(&self) -> usize {
+        self.stats.get_row_len(self.cursor.row)
+    }
+    fn update_current_row_len(&mut self) {
+        self.stats
+            .update_row_len(self.cursor.row, self.get_current_row_len() + 1);
+    }
     fn insert_character(&mut self, character: char) {
         self.buffer.insert(self.cursor_to_pos(), character);
-        // self.print_char(character);
-        // self.present();
+        self.update_current_row_len();
+        self.move_cursor(&Key::Right);
+        //self.print_char(character);
+        //self.present();
         self.print_all();
     }
 
-    fn _reset_cursor(&mut self) {
-        self.cursor.reset();
-    }
-
-    fn advance_cursor(&mut self) {
-        self.cursor.advance();
-        self.print_cursor();
-    }
     fn cursor_to_pos(&self) -> usize {
         self.buffer
             .split('\n')
@@ -116,25 +124,7 @@ impl Terminal {
     }
 
     fn move_cursor(&mut self, arrow: &Key) {
-        let mut current_cursor = (self.cursor.row as i32, self.cursor.col as i32);
-
-        let direction = match arrow {
-            Key::Up => (-1, 0),
-            Key::Down => (1, 0),
-            Key::Right => (0, 1),
-            Key::Left => (0, -1),
-            _ => unreachable!(),
-        };
-
-        current_cursor.0 += direction.0;
-        current_cursor.1 += direction.1;
-
-        current_cursor.0 = cmp::max(current_cursor.0, 0);
-        current_cursor.1 = cmp::max(current_cursor.1, 0);
-
-        self.cursor.row = current_cursor.0 as usize;
-        self.cursor.col = current_cursor.1 as usize;
-
+        self.cursor.moveit(arrow, &self.stats);
         self.print_cursor();
     }
 
@@ -159,7 +149,7 @@ impl Terminal {
             }
 
             self.print_char_at(character, &cursor);
-            cursor.advance();
+            cursor.advance(None);
         }
 
         self.buffer = tmp_buffer.drain(..).collect();
@@ -204,8 +194,25 @@ impl Cursor {
         (self.row, self.col)
     }
 
-    fn advance(&mut self) {
-        if self.col == self.width {
+    fn advance_row(&mut self) {
+        self.row += 1;
+        self.col = 0;
+    }
+    fn moveit(&mut self, arrow: &Key, stats: &Stats) {
+        match arrow {
+            Key::Up => self.up(),
+            Key::Down => self.down(),
+            Key::Right => self.advance(stats.get_row_len(self.row)),
+            Key::Left => self.back(stats.previous_row_len(self.row)),
+            _ => unreachable!(),
+        }
+    }
+    fn advance<P: Into<Option<usize>>>(&mut self, current_row_len: P) {
+        let bound = match current_row_len.into() {
+            Some(row_len) => row_len,
+            None => self.width,
+        };
+        if self.col == bound {
             self.col = 0;
             self.row += 1;
         } else {
@@ -213,9 +220,29 @@ impl Cursor {
         }
     }
 
-    fn advance_row(&mut self) {
-        self.row += 1;
+    fn back<P: Into<Option<usize>>>(&mut self, previous_row_len: P) {
+        let bound = match previous_row_len.into() {
+            Some(row_len) => row_len,
+            None => self.width,
+        };
+        if self.col == 0 {
+            self.col = bound;
+            self.row -= 1;
+        } else {
+            self.col -= 1;
+        }
+    }
+
+    fn up(&mut self) {
         self.col = 0;
+        if self.row != 0 {
+            self.row -= 1;
+        }
+    }
+
+    fn down(&mut self) {
+        self.col = 0;
+        self.row += 1;
     }
 }
 
