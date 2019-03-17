@@ -89,7 +89,7 @@ impl Terminal {
                         || arrow == &Key::Left
                         || arrow == &Key::Right =>
                 {
-                    self.move_cursor(arrow)
+                    self.move_cursor(arrow, false)
                 }
                 Event::Key(Key::Char(character)) => self.insert_character(character),
                 _ => (),
@@ -109,21 +109,29 @@ impl Terminal {
     fn insert_character(&mut self, character: char) {
         self.buffer.insert(self.cursor_to_pos(), character);
         self.update_current_row_len();
-        self.move_cursor(&Key::Right);
+        self.move_cursor(&Key::Right, true);
     }
 
-    fn move_cursor(&mut self, arrow: &Key) {
+    fn move_cursor(&mut self, arrow: &Key, update: bool) {
         self.cursor.moveit(arrow, &self.stats);
-        self.move_window();
+        let move_check = self.move_window();
         self.set_cursor();
-        self.print_all();
+
+        if move_check || update {
+            self.print_all();
+        }
+        self.present();
     }
 
-    fn move_window(&mut self) {
+    fn move_window(&mut self) -> bool {
         if self.cursor.row == self.window.upper_bound {
             self.window.move_down();
+            true
         } else if self.cursor.row + 1 == self.window.lower_bound && self.window.lower_bound != 0 {
             self.window.move_up();
+            true
+        } else {
+            false
         }
     }
 
@@ -149,8 +157,6 @@ impl Terminal {
                 });
                 cursor.advance_row();
             });
-
-        self.present();
     }
     fn print_char_at(&self, character: char, cursor: &Cursor) {
         let (row, col) = cursor.tuple();
