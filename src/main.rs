@@ -105,48 +105,33 @@ impl Terminal {
 
         self.present();
     }
-    fn get_current_row_len(&self) -> usize {
-        self.stats.get_row_len(self.cursor.row)
-    }
-    fn update_current_row_len(&mut self) {
-        self.stats
-            .update_row_len(self.cursor.row, self.get_current_row_len() + 1);
-    }
+
     fn insert_character(&mut self, character: char) {
         self.buffer.insert(self.cursor_to_pos(), character);
         self.update_current_row_len();
         self.move_cursor(&Key::Right);
     }
 
-    fn cursor_to_pos(&self) -> usize {
-        self.buffer
-            .split('\n')
-            .take(self.cursor.row)
-            .fold(0, |acc, x| acc + x.len() + 1)
-            + self.cursor.col
-    }
-
     fn move_cursor(&mut self, arrow: &Key) {
         self.cursor.moveit(arrow, &self.stats);
         self.move_window();
-        self.print_cursor();
+        self.set_cursor();
         self.print_all();
     }
 
     fn move_window(&mut self) {
         if self.cursor.row == self.window.upper_bound {
             self.window.move_down();
-        } else if self.cursor.row == self.window.lower_bound && self.window.lower_bound != 0 {
+        } else if self.cursor.row + 1 == self.window.lower_bound && self.window.lower_bound != 0 {
             self.window.move_up();
         }
     }
 
-    fn print_cursor(&self) {
+    fn set_cursor(&self) {
         let _ = self
             .term
             .borrow()
             .set_cursor(self.cursor.row - self.window.lower_bound, self.cursor.col);
-        //self.present();
     }
 
     fn print_all(&mut self) {
@@ -180,6 +165,23 @@ impl Terminal {
     fn present(&self) {
         let _ = self.term.borrow().present();
     }
+
+    // helper fns
+    fn get_current_row_len(&self) -> usize {
+        self.stats.get_row_len(self.cursor.row)
+    }
+    fn update_current_row_len(&mut self) {
+        self.stats
+            .update_row_len(self.cursor.row, self.get_current_row_len() + 1);
+    }
+    fn cursor_to_pos(&self) -> usize {
+        self.buffer
+            .split('\n')
+            .take(self.cursor.row)
+            .fold(0, |acc, x| acc + x.len() + 1)
+            + self.cursor.col
+    }
+
     // debug
     fn _debug<T: ToString>(&self, x: T) {
         let _ = self.term.borrow().clear();

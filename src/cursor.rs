@@ -78,8 +78,8 @@ impl Cursor {
     }
 
     fn up(&mut self) {
-        self.col = 0;
         if self.row != 0 {
+            self.col = 0;
             self.row -= 1;
         }
     }
