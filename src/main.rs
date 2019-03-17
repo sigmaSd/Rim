@@ -173,19 +173,19 @@ impl Terminal {
     }
 
     // helper fns
-    fn get_current_row_len(&self) -> usize {
+    fn _get_current_row_len(&self) -> usize {
         self.stats.get_row_len(self.cursor.row)
     }
     fn update_current_row_len(&mut self) {
-        self.stats
-            .update_row_len(self.cursor.row, self.get_current_row_len() + 1);
+        self.stats.update_row_len(self.cursor.row);
     }
     fn cursor_to_pos(&self) -> usize {
-        self.buffer
-            .split('\n')
-            .take(self.cursor.row)
-            .fold(0, |acc, x| acc + x.len() + 1)
-            + self.cursor.col
+        let rows_len = if self.cursor.row != 0 {
+            self.stats.get_cummulative_rows_len(self.cursor.row - 1)
+        } else {
+            0
+        };
+        rows_len + self.cursor.col
     }
 
     // debug
