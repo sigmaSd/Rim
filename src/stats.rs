@@ -20,4 +20,7 @@ impl Stats {
     pub fn update_row_len(&mut self, row: usize, new_len: usize) {
         self.rows_len[row] = new_len;
     }
+    pub fn rows_num(&self) -> usize {
+        self.rows_len.len()
+    }
 }

@@ -13,6 +13,9 @@ use tuikit::term::{Term, TermHeight};
 mod stats;
 use stats::Stats;
 
+mod cursor;
+use cursor::Cursor;
+
 type RR<T> = Rc<RefCell<T>>;
 
 fn main() {
@@ -49,6 +52,7 @@ struct Terminal {
     height: usize,
     cursor: Cursor,
     stats: Stats,
+    window: Window,
 }
 impl Terminal {
     fn new(buffer: String) -> Self {
@@ -57,6 +61,7 @@ impl Terminal {
         ));
 
         let (width, height) = term.borrow().term_size().unwrap();
+        let window = Window::new(height);
         let cursor = Cursor::new(width);
         let mut stats = Stats::default();
         stats.read(&buffer);
@@ -68,6 +73,7 @@ impl Terminal {
             height,
             cursor,
             stats,
+            window,
         }
     }
     fn run(&mut self) {
@@ -110,9 +116,6 @@ impl Terminal {
         self.buffer.insert(self.cursor_to_pos(), character);
         self.update_current_row_len();
         self.move_cursor(&Key::Right);
-        //self.print_char(character);
-        //self.present();
-        self.print_all();
     }
 
     fn cursor_to_pos(&self) -> usize {
@@ -125,34 +128,43 @@ impl Terminal {
 
     fn move_cursor(&mut self, arrow: &Key) {
         self.cursor.moveit(arrow, &self.stats);
+        self.move_window();
         self.print_cursor();
+        self.print_all();
+    }
+
+    fn move_window(&mut self) {
+        if self.cursor.row == self.window.upper_bound {
+            self.window.move_down();
+        } else if self.cursor.row == self.window.lower_bound && self.window.lower_bound != 0 {
+            self.window.move_up();
+        }
     }
 
     fn print_cursor(&self) {
         let _ = self
             .term
             .borrow()
-            .set_cursor(self.cursor.row, self.cursor.col);
-        self.present();
+            .set_cursor(self.cursor.row - self.window.lower_bound, self.cursor.col);
+        //self.present();
     }
 
     fn print_all(&mut self) {
         let _ = self.term.borrow().clear();
 
         let mut cursor = Cursor::new(self.width);
-
-        let mut tmp_buffer: String = self.buffer.drain(..).collect();
-        for character in tmp_buffer.chars() {
-            if character == '\n' {
+        self.buffer
+            .split('\n')
+            .skip(self.window.lower_bound)
+            .take(self.window.upper_bound)
+            .for_each(|line| {
+                line.chars().for_each(|c| {
+                    self.print_char_at(c, &cursor);
+                    cursor.advance(None);
+                });
                 cursor.advance_row();
-                continue;
-            }
+            });
 
-            self.print_char_at(character, &cursor);
-            cursor.advance(None);
-        }
-
-        self.buffer = tmp_buffer.drain(..).collect();
         self.present();
     }
     fn print_char_at(&self, character: char, cursor: &Cursor) {
@@ -160,7 +172,7 @@ impl Terminal {
         //XXX too much allocation
         let _ = self.term.borrow().print(row, col, &character.to_string());
     }
-    fn print_char(&self, character: char) {
+    fn _print_char(&self, character: char) {
         let (row, col) = self.cursor.tuple();
         //XXX too much allocation
         let _ = self.term.borrow().print(row, col, &character.to_string());
@@ -168,93 +180,35 @@ impl Terminal {
     fn present(&self) {
         let _ = self.term.borrow().present();
     }
+    // debug
+    fn _debug<T: ToString>(&self, x: T) {
+        let _ = self.term.borrow().clear();
+        let _ = self.term.borrow().print(0, 0, &x.to_string());
+        self.present();
+    }
 }
 
-struct Cursor {
-    row: usize,
-    col: usize,
-    width: usize,
+struct Window {
+    lower_bound: usize,
+    upper_bound: usize,
 }
-impl Cursor {
-    fn new(width: usize) -> Self {
+impl Window {
+    fn new(upper_bound: usize) -> Self {
         Self {
-            row: 0,
-            col: 0,
-            width,
+            lower_bound: 0,
+            upper_bound,
         }
     }
-    fn reset(&mut self) {
-        *self = Self {
-            row: 0,
-            col: 0,
-            width: self.width,
-        };
+    fn move_down(&mut self) {
+        self.upper_bound += 1;
+        self.lower_bound += 1;
     }
-    fn tuple(&self) -> (usize, usize) {
-        (self.row, self.col)
-    }
-
-    fn advance_row(&mut self) {
-        self.row += 1;
-        self.col = 0;
-    }
-    fn moveit(&mut self, arrow: &Key, stats: &Stats) {
-        match arrow {
-            Key::Up => self.up(),
-            Key::Down => self.down(),
-            Key::Right => self.advance(stats.get_row_len(self.row)),
-            Key::Left => self.back(stats.previous_row_len(self.row)),
-            _ => unreachable!(),
+    fn move_up(&mut self) {
+        if self.upper_bound != 0 {
+            self.upper_bound -= 1;
         }
-    }
-    fn advance<P: Into<Option<usize>>>(&mut self, current_row_len: P) {
-        let bound = match current_row_len.into() {
-            Some(row_len) => row_len,
-            None => self.width,
-        };
-        if self.col == bound {
-            self.col = 0;
-            self.row += 1;
-        } else {
-            self.col += 1;
+        if self.lower_bound != 0 {
+            self.lower_bound -= 1;
         }
-    }
-
-    fn back<P: Into<Option<usize>>>(&mut self, previous_row_len: P) {
-        let bound = match previous_row_len.into() {
-            Some(row_len) => row_len,
-            None => self.width,
-        };
-        if self.col == 0 {
-            self.col = bound;
-            self.row -= 1;
-        } else {
-            self.col -= 1;
-        }
-    }
-
-    fn up(&mut self) {
-        self.col = 0;
-        if self.row != 0 {
-            self.row -= 1;
-        }
-    }
-
-    fn down(&mut self) {
-        self.col = 0;
-        self.row += 1;
     }
 }
-
-// trait StringUtils {
-//     fn insert_push(&mut self, idx: usize, character: char);
-// }
-// impl StringUtils for String {
-//     fn insert_push(&mut self, idx: usize, character: char) {
-//         let mut tmp_string: String = self.drain(..idx).collect();
-//         tmp_string.push(character);
-//         tmp_string = self.drain(..).collect();
-//         self.clear();
-//self.push_str(&tmp_string);
-//     }
-// }
